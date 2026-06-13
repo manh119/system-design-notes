@@ -1,13 +1,16 @@
 
 # High level design 
+
 ## 1) Users should be able to start group chats with multiple participants (limit 100)
 
 #### Dùng LB7 hay LB4 cho websocket ? 
+
 - Dùng LB4 thôi, vì đơn giản là chỉ cần giữ kết nối websocket đến server, không cần đọc tin nhắn, hay content hay header, hay URL của http hay tầng app để load balancer (chia tải đến đúng server)
 - Microservice kiểu : chat-service/api/v1/chat, group-service/api/v1/chat thì dùng kiểu LB7 nhỉ, vì nó đọc URL để chia service mà nhỉ ? -> đúng là thế
 - Nếu thế thì websocket connection cũng phải chỉ được kết nối tới chat-service thôi chứ nhỉ? -> tách ra WebSocket Gateway và HTTP API Gateway
 
 #### Luồng sẽ là 
+
 1. User call API POST api/v1/create-chat
 
 	- ```json 
@@ -23,6 +26,7 @@
 2. chat service tạo mới bản ghi group_chat table, memeber_table (bọc 2 lệnh này trong 1 transaction là được)
 
 #### Phân tích cách thiết kế bảng để phục phụ query ?
+
 	- tất cả user trong một group chat 
 	- tất cả group chat của một user 
 
@@ -36,32 +40,35 @@
 
 - Và đánh composite index trên bảng memeber (userId, group_chat_id) và (group_chat_id, user_id) để phục vụ 2 query trên + có thể để primary key là (group_chat_id, user_id) luôn, đỡ phải thêm cột id 
 
-#### Điểm khác so với dynamoDB và Composite Primary Key + GSI là :
+#### Điểm khác so với dynamoDB và Composite Primary Key + GSI 
 
 - Postgres thì nó sẽ tạo 2 cây index dựa trên 2 composite key, lúc tìm thì sẽ tìm trên 2 cây đó 
-
 - DynamoDb thì phải chọn partition key luôn từ đầu, ví dụ group_chat_id làm partition key, user_id làm sort key. Kết hợp với Global secondary index là replica (nhân bản dữ liệu) và sắp xếp dữ liệu theo partition key là user_id và sort key là group_chat_id -> Đọc/ghi hàng tỷ dữ liệu thì vẫn thế, vì scale tuyến tính  - nhưng tốn gấp đôi dung lượng 
-
 
 ## 2) Users should be able to send/receive messages.
 
 #### Giả sử chỉ cần 1 có server
+
 - tất cả user đều online, mỗi khi user mở app thì thiết lập một websocket connection, server lưu hashmap kiểu : userId -> websocket connection ID 
 	1. user A gửi message vào một group chat Id
 	2. Server lưu vào db và send ack cho user A là SENT 
 	3. Server query tất cả member của group chat đó và dựa vào hashmap connection để gửi message đến từng user  
 
 #### Liệu có còn connection của http hay websocket khi app chạy nền ko? 
+
 - Nếu ko thì tại sao firebase lại có thể bắn notification ?
 - -> khi chạy nền thì hệ điều hành có thể kill bất kỳ lúc nào. Firebase gửi được vì có google play service và apple push notification service luôn có kết nối .
 
 #### Các trạng thái của message 
+
 - SENT - khi server ack ok cho người gửi 
 -  DELIVERIED - khi thiết bị người nhận ack cho server
 - READ - khi người nhận vào đọc tin nhắn 
+
 ## 3) Users should be able to receive messages sent while they are not online (up to 30 days).
 
 #### Bảng inbox table (undelivered message table realtime) 
+
 - Khi một người dùng gửi message, sẽ lưu message ở inbox table và message table, sau đó ack cho người dùng là SENT  
 - khi gửi được message qua websocket và thiết bị người dùng ack đã nhận -> xóa message dó khỏi inbox table 
 - khi user offline và online trở lại -> query tất cả message chưa đọc của người đó trong bảng inbox table và gửi cho người đó qua websocket. 
@@ -76,7 +83,9 @@
 	- content 
 - Thế bảng message thì chọn cái gì làm partition key được nhỉ? -> group_chat_id làm partition key, và timestamp làm sortkey vì các message trong các chat ko liên quan gì đến nhau. 
 -   200M daily active user, 20 message/day = 4B message/ day = 4 x 10 ^  9 = 40k message/second  -> when write to message table and inbox table, we need about 100k write / second -> write vào bảng inbox và bảng message đều ok, vì có partition scale tuyến tính mà. 
+
 #### Tại sao TCP khi mở kết nối lại là 3 way handshake 
+
 - mà ko phải là 2 way handshake và 4 way handshake. Tại sao khi TCP đóng kết nối lại là 4 way handshake ?
 - Vì các gói tin được chia nhỏ để gửi trên môi trường mạng hỗn tạp, nên cần đánh số thứ tự của từng gói tin để đảm bảo không nhận trùng, đúng thứ tự. Ví dụ nhận gói tin số 5 rồi mà chưa nhận được gói tin số 3 thì Client có thể request để yêu cầu gửi gói tin số 3 
 - Và handshake là để đảm bảo bên kia còn sống và số thứ tự để bắt đầu là gì. Nên bắt buộc phải có 4 bước : 
@@ -92,6 +101,7 @@
 	- 4. Client bảo oke nhé và vẫn đợi 5p, server nhận được và sau đó server đóng kết nối 
 
 #### Tại sao phải tách bảng inbox, trong khi bảng message có thể để trường status 
+
 - bảng message có thể để status = SENT, DELIVERIED, READ nhỉ? tách bảng inbox hình như hời thừa 
 - Vì inbox là riêng của từng user trong group chat, 1 tin nhắn có thể thuộc về nhiều người dùng khác nhau, và mỗi người có các trạng thái riêng, cùng 1 tin nhắn nhưng người này đã đọc và người kia chưa nhận được 
 - Và nếu triển khai chức năng người dùng đã đọc một message trong một group chat chưa thì có 2 cách : 1 là thêm trường status trong bảng inbox có các trạng thái DELIVERIED, READ, hai là tao một bảng mới ReadReceipt gồm (group_chat_id, user_id, last_read_message) 
@@ -102,29 +112,37 @@
 - nên xóa luôn, vì nếu để thế thì bảng inbox phình vô hạn à :v 
 
 #### Inbox table khác gì queue đâu nhỉ, và so sánh với cách dùng queue?
+
 - Vì khi từ offline sang online mình có lệnh lấy tất cả tin nhắn của user B -> queue không thể query được như thế. (Random access vs queue là sequencel stream)
 - + có thể lưu trữ lâu dài, để lưu 30 ngày trên queue cũng ko tốt, phình và nghẽn queue 
+
 ## 4) Users should be able to send/receive media in their messages.
 
 #### Presigned URL 
+
 - người dùng muốn gửi media -> query chat server để lấy presign-URL để write 
 - người dùng upload trực tiếp media qua presign URL và lấy media_Id để gửi kèm message 
 - chat server lưu lại và fanout service sẽ fanout message cùng presign URL đến người nhận 
 - người nhận lấy cũng lấy link presign URL để đọc media trực tiếp từ s3 
 
 #### Tại sao ảnh, video ko nên lưu ở db thông thường ?? pre-sign URL để user upload trực tiếp và read attacment được dùng ở big tech nào? dẫn chứng ?
+
 - replica đắt, query db lâu hơn vì file nặng hơn, db thường là ssd và chi phí đắt hơn, cache của db chiếm toàn media -> ko hiệu quả. Backup, vacccum đều nặng 
 - Slack : có hàm https://docs.slack.dev/reference/methods/files.getUploadURLExternal/
 - Discord web, khi upload ảnh sẽ lấy upload URL, sau đó PUT ảnh đến URL đó 
 - ![[Pasted image 20260613164207.png]]
 - ![[Pasted image 20260613164315.png]]
+
 #### Vấn đề lớn nhất của presign url chắc là security + handle vòng đời? 
+
 - Có vụ s3 tiktok storage bị hack để lưu toàn video của hacker ?
 - Bear (là động từ nghĩa mang, cầm) -> Bearer token (ai cầm token thì có quyền) -> khóa content type, content length, content size 
 - Dùng AWS CloudFront làm proxy trước khi upload
+
 # Deep dive 
 
 ## 1) How can we handle billions of simultaneous users?
+
 1) How can we handle billions of simultaneous users?
 
 bad : scale ngang (tăng thêm server) sẽ ko work, vì websocket được lưu trạng thái ở server, vậy nên cần một chỗ chung để lưu connection nào ở máy nào gắn với user nào 

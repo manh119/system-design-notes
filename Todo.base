@@ -1,0 +1,12 @@
+formulas:
+  Untitled: ""
+views:
+  - type: table
+    name: Table
+    order:
+      - file.name
+      - file.basename
+      - file.mtime
+    sort:
+      - property: formula.Untitled
+        direction: DESC

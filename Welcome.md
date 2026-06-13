@@ -4,3 +4,7 @@ Make a note of something, [[create a link]], or try [the Importer](https://help.
 
 When you're ready, delete this note and make the vault your own.
 test 
+
+
+> [!Interview question]
+> Ghi chú thông thường
