@@ -99,6 +99,7 @@
 	- 2. Server bảo, oke nhé 
 	- 3. Server đợi gửi xong package cho client và bảo tôi gửi xong rồi nhé, nếu ko thấy phản hồi ở bước 4 thì gửi lại 
 	- 4. Client bảo oke nhé và vẫn đợi 5p, server nhận được và sau đó server đóng kết nối 
+- Thế nếu sau khi đánh số thứ tự 1,2,3,4,  đã nhận được 4 mà ko nhận được 1,2,3 thì người nhận sẽ yêu cầu để nhận các gói tin này đúng ko? và sẽ đợi mãi đúng ko?
 
 #### Tại sao phải tách bảng inbox, trong khi bảng message có thể để trường status 
 
