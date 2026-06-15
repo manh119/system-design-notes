@@ -20,6 +20,7 @@
 - Rider 
 - Driver
 - Trip 
+- Fare (Estimated price, estimated time,...)
 
 # API Design
 
@@ -63,7 +64,7 @@
 // response : Http code 200
 ```
 
-- Rider and Driver report location of each other
+- Rider and Driver can report their location
 - POST /api/v1/drivers/location
 - POST /api/v1/riders/location
 
@@ -73,10 +74,12 @@
 
 ![[Pasted image 20260614075243.png]]
 
+API gateway and load balancer : cross cutting concern like authen, routing, rate limiter
+Third party service (google map) for get location, mapping, distance
 
-Rider flow would be:
+Rider request flow would be:
 1. Rider enter destination and app get the current location and click get estimated fare in the app
-2. Trip service estimate price based on location, peak hour, ... and create a new record in Estimated_trip table
+2. Trip service estimate price based on location, peak hour, price model ... by using some Thrid party service like google map, and create a new record in Estimated_trip table
 3. Return estimated_id, estimated_price, estimated_time to the rider
 
 ## How will riders be able to request a ride based on the estimated fare?
@@ -85,10 +88,10 @@ Rider flow would be:
 
 Rider flow would be:
 1. Rider click the estimated trip and book for a trip
-2. Booking service create new record on bookings table with status = PENDING
+2. Booking service create new record on bookings table with status = REQUESTED
 3. Booking service send notification to the rider and wait for an accept
 4. Rider accept the trip, and booking serice change of record in the bookings table = ON_GOING
-5. Booking service return the booking_id to the rider
+5. Booking service return the Booking to the rider
 
 ## How does your system match riders to the best driver for their ride?
 
@@ -96,11 +99,12 @@ Rider flow would be:
 
 The flow would be : 
 1. Drivers report their current location each 10s, and booking service save current driver's location to the Drivers table
-2. When booking service looking for an driver, it query all AVAILABLE driver, and caculate a score base on current driver location, rating, ... and get the driver having highest score for that trip
+2. When booking service looking for an driver, it query all AVAILABLE driver, and caculate a score base on current driver location, rating, ... and get the driver having highest score to match for that trip
 
 ## How does your system notify matched drivers and allow them to accept/decline rides?
 
-- The system can notify matched drivers through FCM (Firebase cloud message) or something like that in IOS. And wait 1 minute timeout for this driver to accept/decline before we move the another driver.
+- Identify a list of top drivers based on their score
+- The system can notify matched drivers through FCM (Firebase cloud message) or something like that in IOS (APNs - apple push notification service). And wait 1 minute timeout for this driver to accept/decline before we move the another driver.
 - Driver can accept/decline for a trip through http API
 
 # Deep Dives
@@ -111,17 +115,46 @@ The flow would be :
 
 - With 20M daily active driver, and drivers report their current location each 10s. We have 20M x 10 ^ 5 / 10s request per day = 2M report location per second 
 - Assume we partition our service by city, so the peak would be 1M report location per second
-- No database can handle this write request. -> we can use redis to save this information - GEOHASH
-- When find nearest location, we can use built-in function of GEOHASH in redis for efficiently
+- No database can handle this write request + very expensive (1.25$ for 1M write request unit 1Kb -> more than 100k $ per day) + bad query nearby location (because we need to scan full table to find nearby driver to a rider)
+
+##### Good solution 
+
+- batch write each 30s + a specialized geospatial database for index driver location (quad-tree). But still a lot of write + delay in batch processing.
+
+##### Greate solution 
+
+- we can use redis to save this information - GEOHASH + handle milion of write per second (100k-500k write per node + redis cluster)
+- When finding nearby location, we can use built-in function of GEOHASH in redis for efficiently
+- Run cronjob each 1 minute to remove driver go offline 
+- Nếu dùng redis cluster thì phải xử lý case không thể thực hiện GEOSEARCH all node redis được -> phải chia theo thành phố + nếu gộp thì dùng GEOSEARCH ở tầng application để search nhiều node  
+- What if redis go down ? 
+	- Use redis persistent (RDB - fork new process to save data in to disk (effect overall performance))
+	- Redis Sentinel (so sánh vs redis cluster ?) để đảm bảo high availability 
+	- Because driver update their location each 5s, so if redis go down and we lose all data, we can rebuild driver's location quickly.
 
 ## How would you partition and query Redis geospatial data near city boundaries so that a rider close to the edge still matches with nearby drivers in adjacent partitions?
 
 - we can query both adjacent city when location of drivers is nearby the boundary of the city
 
+## How can we manage system overload from frequent driver location updates while ensuring location accuracy?
+
+- Adaptive location update intervals : thay vì đặt cố định là 5s một lần, thì dựa vào các sensor ở điện thoại, tốc độ của tài xế, hướng đi (đi thẳng 10km), khu vực đông đúc để xác định gửi vị trí tài xế 10s một lần hay 2s một lần. 
+
 ## How do we guarantee each driver receives at most one ride request at a time?
 
-- When we send driver a ride request, we can keep distributed lock an distributed lock in redis with TTL = 1 minute (time for driver to accept / decline a trip). And release lock when timeout or driver accept/decline a trip.
+#### Good solution 
+
+- lock row đó tầng Database (chuyển status từ AVAILABLE -> OUTSTANDING_REQUEST) + đếm timeout trong 10s ở tầng application. Nếu hết timeout thì tự chuyển về AVAILABLE. -> lúc query để tìm tài xế phù hợp cho một rider khác thì chỉ query tài xế có status = AVAILABLE 
+- Nhưng vẫn bị case tầng app chết -> tài xế bị lock mãi ở trạng thái OUTSTANDING_REQUEST -> cron job chạy 5p một lần để gỡ 
+
+#### Greate solution 
+
+ - When we send driver a ride request, we can keep distributed lock an distributed lock in redis with TTL = 10 second (time for driver to accept / decline a trip). And release lock when timeout or driver accept/decline a trip.
 - The next time we want to send ride request to a driver, we will check if they have lock in redis, so if have, we will go to another drivers.  
+- Thử thách : Nếu redis chết thì sao ??? #todo
+
+
+
 
 ## How would you implement the Redis lock safely so that only the service instance that acquired the lock can release it when the driver responds?
 
