@@ -151,10 +151,12 @@ The flow would be :
 
  - When we send driver a ride request, we can keep distributed lock an distributed lock in redis with TTL = 10 second (time for driver to accept / decline a trip). And release lock when timeout or driver accept/decline a trip.
 - The next time we want to send ride request to a driver, we will check if they have lock in redis, so if have, we will go to another drivers.  
-- Thử thách : Nếu redis chết thì sao ??? #todo
-
-
-
+- Thử thách : Nếu redis chết thì sao ??? 
+	- Có node redis replica có dữ liệu sao chép từ master sẽ lên thay nếu triển khai mô hình redis cluster
+	- TH mất hết dữ liệu ở redis, request A đến tài xế A, trong lúc đó redis chết và phục hồi lại mà mất hết lock -> request B check lock thì ko có lock -> gửi tiếp request cho tài xế A -> bị lỗi 2 request gửi đến 1 tài xế trong 1 khoảng thời gian. 
+	- -> chốt chặn ở tầng db, vì lúc tài xế accept cần cập nhật bản ghi booking hay trạng thái bản ghi driver kiểu (khóa lạc quan)
+		- UPDATE drivers SET status = ON_GOING where driver_id = '123' and status = available 
+	- Nếu 0 row bị thay đổi -> bắn lỗi cho drivers và để tự động điều hướng cho user tìm tài xế khác 
 
 ## How would you implement the Redis lock safely so that only the service instance that acquired the lock can release it when the driver responds?
 
@@ -162,25 +164,59 @@ The flow would be :
 - It is edge case : when service A aquire a lock A, and TTL is 1 minute. 
 - Imagine this scenario: Instance A acquires a lock for Driver X with a 1-minute TTL. Due to a slow network or GC pause, Instance A takes longer than 1 minute to process. The TTL expires, the lock is automatically released, and Instance B acquires a new lock for Driver X. 
 - Now Instance A finishes its work and calls DEL on the Redis key — it just deleted Instance B's lock, not its own. Driver X is now unprotected and could receive a second ride request. The fix is straightforward: when acquiring the lock, store a unique token (e.g., a UUID) as the lock's value. 
-- When releasing, use a Lua script to atomically check that the stored value matches your token before deleting — this guarantees only the original acquirer can release it. This is actually the standard Redis Redlock pattern recommendation. -> là sao ???? 
+- When releasing, use a Lua script to atomically check that the stored value matches your token before deleting — this guarantees only the original acquirer can release it. This is actually the standard Redis Redlock pattern recommendation. -> là sao ???? #todo 
 
 
 ## How can we ensure no ride requests are dropped during peak demand periods?
 
 ![[Pasted image 20260614094920.png]]
 
-- Should we add kafka before Booking service, or after Booking service ? 
-	- If before, but it is HTTP call, so how we can handle that ?
-	- And Booking service is auto scale based on RAM, CPU usage -> it is better to place kafka after that ?
+- Nên đặt kafka trước hay sau booking service -> phải đặt sau, vì user call HTTP request -> cần service để forward từ HTTP call vào kafka 
+- When user booking, we have HTTP API call to produce serivce, this service only forward this request to kafka and gerenate a job id, and return this job id for the users. 
+	- And the user can call API check-status for this job id each 5s. (Hình như lý do không giữ luồng để đợi là bởi vì có thể timeout, và ví dụ 200 request giữ luồng thì sẽ tốn tomcat thread nên ko phục vụ được request khác)
+	- Hoặc khi app đang mở thì mở kết nối SSE hoặc Websocket để khi nào có matching thì gửi qua đường đó để app chuyển màn 
+	- Nếu app đã tắt nhưng mở mạng thì chỉ có cách bắn qua notification qua FCM hoặc APN
+	
 
-- When user booking, we have HTTP API call to produce serivce, this service only forward this request to kafka and gerenate a job id, and return this job id for the users. And the user can call API check-status for this job id each 5s. (Hình như lý do không giữ luồng để đợi là bởi vì có thể timeout, và ví dụ 200 request giữ luồng thì sẽ tốn tomcat thread nên ko phục vụ được request khác)
-- Thế thì api check-status call đến produce service hay Booking service ??? 
 - So Kakfa can ingest any peak traffic to ensure no ride request are dropped, and we can scale booking service base on length of kafka queue. 
-- And after processed request, Booking service response to the produce
+- commit offset only after we successfully found a match -> service die, we still have message in queue for another instance to process 
 
+- we could have requests that are stuck behind a request that is taking long time to process
+	- Có thể vì trong 1 partition thì giống như append only log -> đảm bảo thứ tự -> nên phải đợi 1 message được xử lý xong mới được xử lý message tiếp theo
+	- Kafka có cơ chế xử lý song song qua partition -> chia request xử lý lâu và request xử lý nhanh ở các topic hay các partition khác nhau 
+
+![[Pasted image 20260616220418.png]]
 
 ## How would you implement consumer acknowledgment and retries in Kafka so a ride request is not lost if Booking Service crashes halfway through matching?
+#todo 
+
+
+## What happens if a driver fails to respond in a timely manner?
+
+- Sau khi match xong và gửi request cho driver để accept / decline + lock trong redis để đảm bảo 1 request chỉ gửi đến 1 driver. Thì nếu hết hạn thời gian, thì xử lý thế nào để gửi sang driver tiếp theo ? Là bài toán Human-in-the-loop Multi-step Process.
+- Nếu đếm thời gian ở tầng service -> nếu service chết -> lúc sống lại thì vẫn đọc request từ kafka và xử lý tiếp... Vẫn ok....
+- Nếu check 1s một lần trong redis key của driver đó thì sao ? mỗi tài xế đợi đơn cần một cái poll 1s 1 lần trong 10s -> chết cơm 
+	- cách 1 : khi redis timeout thì redis bắn noti cho service (even driven)
+	- cách 2 : gom lại trong sorted set, chỉ cần 1 thread chạy 1 s một lần để lấy tất cả driver có thời gian < now()
+#### good solution 
+
+- delay queue, lúc gửi matching request cho driver thì đồng thời ném vào delay queue (AMZ SQS) 10s. Consumer nhận và check nếu người đó đã accept/decline đơn đó chưa, nếu chưa thì gửi tiếp cho driver khác và gửi vào delay queue tiếp.
+- cần handle edge case là khi khách hàng bấm accept phút cuối + delay queue đọc ra và check thấy người đó chưa accpet/decline -> gửi cho driver khác -> lúc driver khác đó accept tiếp thì update bằng optimistic lock và throw lỗi là được. 
+
+#### greate solution 
+
+- dùng AMZ step function hoặc [[Temporal]] (uber) để đảm bảo mọi đoạn code đều được lưu trạng thái xuống db -> service chết thì lúc sống lại chạy tiếp từ nơi đã die. 
+- Tăng độ phức tạp của hệ thống 
+
+
+
+
+## How can you further scale the system to reduce latency and improve throughput?
+
+- tăng người dùng 100x -> chia service theo tỉnh thành, quốc gia. + consistency hashing để chia dữ liệu trong thành phố đông dân. 
+
 
 
 > [!Interview question]
 > Ghi chú thông thường
+> #todo 
