@@ -8,5 +8,9 @@ views:
       - file.basename
       - file.mtime
     sort:
+      - property: file.basename
+        direction: DESC
+      - property: file.mtime
+        direction: ASC
       - property: formula.Untitled
         direction: DESC
