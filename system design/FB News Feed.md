@@ -77,5 +77,28 @@ The flow would be :
 
 ## How do we efficiently read feeds for users who follow thousands of accounts while maintaining low latency?
 
+![[Pasted image 20260618073323.png]]
+
 - Each time we want to get feeds for a user, we get all people this user follow in Follows table, and get all post of all followees and order by timestamp. -> consume a lot of sort, query, ... -> low latency #fanout_on_read
-- So we should pre-compute + pre-sort all feed for a user when followee have new post by having Pre_computed_feed to save all sorted feed 
+- So we should pre-compute + pre-sort all feed for a user when followee have new post by having Pre_computed_feed to save all sorted feed
+- So I use cassandra here instead of postgres for sorted + scale horizontally feature. When a user create a post we create new record on Posts table, and publish (post_id, created_by) in to kafka. 
+- We have fanout service as consumer to consume (post_id, created_by) messsage. So it query all follower, then create new recod in pre_computed_feed. #fanout_on_write
+- Thế làm sao đánh dấu user đọc một post rồi để không hiện lại nhỉ? Nếu xóa khi đọc xong trong pre_computed_feed thì không ổn lắm, vì đây là cassandra nên khi xóa nó tạo lệnh xóa thôi chứ ko xóa ngay -> khi đọc mới tổng hợp dữ liệu -> tăng latency 
+
+## How would you design the fanout worker and Cassandra writes so that precomputing feed entries stays reliable and efficient when a single post needs to be inserted into a very large number of follower feeds?
+
+- Because we use kafka, we only commit offset of message when we fanoutted all post to pre_computed_feed + we insert into pre_computed_table by batch. And we partition in a topic by postId. So it is reliable and efficient. 
+- Bao nhiêu partition là đủ ở đây? cần chia thêm topic không? Hàng trăm triệu post một ngày thì kafka thành bottleneck không? Nếu chỉ một topic thì mỗi partition chứa bao nhiêu dữ liệu cần để xử lý 
+
+## How do we avoid write amplification when a celebrity user with millions of followers creates a post that needs to update millions of other users feeds?
+
+- We can dived topic for celebrity user (assume > 50k follower) and normal user. So the post of celebrity user will go to long_processing_topic. With consumer in topic, we process in batch (1000 chunk) to reach efficiently.
+- Instead of precomputing their posts into every follower feed, mark those accounts to skip fanout on write and merge their posts into the feed at read time #todo 
+
+## How can we handle "hot posts" (viral content from any user) which are read millions of times per minute? Focus on preventing database hot spots.
+
+![[Pasted image 20260618075643.png]]
+
+- When a post is determined is viral by our algorithm, we cache its content in to redis.
+- When we get feed from pre_computed_feed, so if that postId is a popular post, we can get it from redis instead going to Posts table to get it. 
+- We can cache popular conent in CDN, which is nearby to user. 
