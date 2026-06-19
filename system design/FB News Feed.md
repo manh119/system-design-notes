@@ -8,9 +8,10 @@
 
 ## Non functional requirements 
 
-- Prefer high availability + eventually consistent
-- Low latency for view feed and create new post (500ms)
-- Scale up to 2 Bilion users 
+- Prefer high availability of view and post new feed + eventually consistent for posting 
+- Low latency for view feed and create new post (< 500ms)
+- Scale up to 2 Bilion users. Read write ratio : 100 : 1
+- Unlimited follow/follower
 
 # Core entity
 
@@ -29,6 +30,8 @@
 
 - Users should be able to friend/follow people (these are uni-directional follow relationships)
 	- POST /api/v1/follow?userid=123 -> SUCCESS / FAIL
+	- Note bài viết gốc bảo PUT cho idempotent, mà fb chính thống vẫn dùng POST đây, miễn mình xử lý idempotent là được mà :)) 
+	- ![[Pasted image 20260619063049.png]]
 
 - Users should be able to view a feed of posts from people they follow, in chronological order
 - Users should be able to page through their feed
@@ -53,8 +56,10 @@ The flow would be :
 The flow would be : 
 1. user follow a user with userId = 123, so frontend need to call api /api/v1/follow?userid=123
 2. API gateway do cross cutting concern like routing, authen, rate limit
-3. User service create new record in Follows table
+3. User service create new record in Follows table as setting up relationship
 4. Return http code = 200 for user
+
+With Follows table in cassandra, we choose followee as partition key, follower as sort key. And create Global secondary index (just copy real data) with follower as partition to support both type of query.
 
 ## How will users be able to view a feed of posts from people they follow? Don't worry about pagination yet.
 
@@ -63,15 +68,24 @@ The flow would be :
 The flow would be : 
 1. User scoll their feed, front end call API /api/v1/feed?pageSize=20&cursor=someTimestamp to get list of Feed
 2. API gateway do cross cutting concern like routing, authen, rate limit
-3. Feed service will get all followee of user, and get all posts of all followee
+3. Feed service will get all followee of user, and get all posts of all followee and sort by timestamp
 4. Return list of feed for that user with pagesize and cursor
+
+We may have Global secondary index (creatorId as PK, created_at as sort key) to query all sorted post of a user very quickly 
+
+Because : 
+- user can follow many people
+- a people can have a lot of post
+- total post is very large
+- -> current solution is not scale
 
 ## How will users be able to page through their feed? (i.e., infinite scroll - scroll down to see older posts without reloading the entire page)
 
 The flow would be : 
 1. like above, we could use paganation base on cursor = someTimestamp. 
 2. For example : /api/v1/feed?pageSize=20&cursor=someTimestamp, after scoll first 20 feed, the next query should be /api/v1/feed?pageSize=20&cursor=lastTimestamp where lastTimestamp is the last timeStamp of first 20 feeds.
-3. the feed service should return the next cursor along with the posts, so the front end easly to get next cursor
+3. Feed service get all follow of a user, get all post in GSI. And get only post older than lastTimestamp
+4. Feed service return the next cursor along with the posts, so the front end easly to get next cursor
 
 # Deep dive
 
@@ -79,11 +93,24 @@ The flow would be :
 
 ![[Pasted image 20260618073323.png]]
 
-- Each time we want to get feeds for a user, we get all people this user follow in Follows table, and get all post of all followees and order by timestamp. -> consume a lot of sort, query, ... -> low latency #fanout_on_read
-- So we should pre-compute + pre-sort all feed for a user when followee have new post by having Pre_computed_feed to save all sorted feed
-- So I use cassandra here instead of postgres for sorted + scale horizontally feature. When a user create a post we create new record on Posts table, and publish (post_id, created_by) in to kafka. 
+- Each time we want to get feeds for a user, we get all people this user follow in Follows table, and get all post of all followees and order by timestamp. -> consume a lot of sort, query, ... -> low latency #fanout_on_read (a single query fanout to create many other query)
+- So we should pre-compute + pre-sort all feed for a user when followee have new post by having Pre_computed_feed to save all sorted feed for each user (giống như nhà hàng xử lý đồ ăn trước khi bạn đến) -> mỗi user chỉ cần vào Pre_computed_feed để đọc bài viết của mình 
+- When a user create a post we create new record on Posts table, and publish (post_id, created_by) in to kafka. 
 - We have fanout service as consumer to consume (post_id, created_by) messsage. So it query all follower, then create new recod in pre_computed_feed. #fanout_on_write
-- Thế làm sao đánh dấu user đọc một post rồi để không hiện lại nhỉ? Nếu xóa khi đọc xong trong pre_computed_feed thì không ổn lắm, vì đây là cassandra nên khi xóa nó tạo lệnh xóa thôi chứ ko xóa ngay -> khi đọc mới tổng hợp dữ liệu -> tăng latency 
+- Thế làm sao đánh dấu user đọc một post rồi để không hiện lại nhỉ? Nếu xóa khi đọc xong trong pre_computed_feed thì không ổn lắm, vì đây là cassandra nên khi xóa nó tạo lệnh xóa thôi chứ ko xóa ngay -> khi đọc mới tổng hợp dữ liệu -> tăng latency #todo 
+- Giới hạn product + tradeoff : 
+	- Nếu một người dùng follow 100k người khác -> bảng pre_computed_feed của họ có 100k bài viết -> nên giới hạn số lượng một người có thể follow lại. Hoặc nếu follow 100k user thì có thể chấp nhận chậm 10p lag chẳng hạn. Giống fb chỉ cho tối đa 5k bạn bè. 
+	- Giới hạn bảng pre_computed_feed của từng user chỉ chứa 200 bài viết mới nhất. 10byte each postId -> 2KB each 200 postId -> 1B user, we need 2kGB = 2TB (tầm 5tr - quá rẻ)
+- Vấn đề mới : một người nổi tiếng có 2triệu người theo dõi -> khi đăng post phải ghi cho 2tr bản ghi -> toang 
+- what about if users page back 100 pages into {their feed, search results, etc}? 
+	- -> ko support thôi :)) 
+	- People frequently wonder "what about if users page back 100 pages into {their feed, search results, etc}?" While this is a fair question, most systems will simply just not support this (try to go a few dozen pages deep into Google) because real users aren't doing this.
+	- At the end of the day, this fixed 200 number here could be increased or decreased by how much it impacts those tail users and the relative tradeoff in cost. We can always fall back to our naive solution of querying the base Follow and Post tables if we need to get more content for users who have reached the end of their feed.  #todo xử lý cái này 
+
+ 
+ 
+
+
 
 ## How would you design the fanout worker and Cassandra writes so that precomputing feed entries stays reliable and efficient when a single post needs to be inserted into a very large number of follower feeds?
 
