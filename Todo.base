@@ -1,3 +1,6 @@
+filters:
+  and:
+    - '!file.ext.endsWith("png")'
 formulas:
   Untitled: ""
 views:
