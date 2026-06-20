@@ -14,6 +14,7 @@
 # Buổi 4 
 
 - impl queue (ring buffer), topic 
+
 # Buổi 5 - 11/4
 
 ### Consumer group - message consumption 

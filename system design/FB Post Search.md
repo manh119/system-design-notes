@@ -102,7 +102,17 @@ FLow would be :
 
 ## How will the system handle queries with multiple keywords (e.g. "taylor AND swift")?
 
+Cách 1 : 
+
 - we can search for each token, and intersect k sorted posts to get the result
+- và chỉ lọc lấy những cụm có "taylor swift" sát nhau, chứ ko phải "taylor ...1000 từ khác ... swift"
+- tìm kiếm bài post có thể nhanh (vì index qua redis), nhưng với keyword có hàng triệu post, gộp lại và intersect + filter sẽ khá tốn time, tăng latency 
+- Intersect có thể dùng 2 pointer trên 2 mảng đã sắp xếp với O(m + n)
+
+Cách 2 : 
+
+- Cách tốt hơn là đánh index cả cụm 2 từ liên tiếp - bigrams, ví dụ cụm "a b c" thì ngoài đánh index a, b, c thì đánh index cả a b, b c nữa. -> tốn dung lượng gấp đôi, gấp ba ở redis. 
+- Có thể chỉ đánh cụm bigrams (2 từ liên tiếp) xuất hiện nhiều, bằng cách dùng count min sketch. Và quay về dùng cách 1 nếu cụm đó ko xuất hiện nhiều (fallback)
 
 ## How would you implement the intersection efficiently when one keyword is very rare and another is extremely common?
 
@@ -115,9 +125,27 @@ FLow would be :
 
 ## How can we make ingestion scalable and fast with millions of posts and billions of likes?
 
-- with billion of likes, redis cluster can handle effiecent
-- with billion of posts, cansandra can handle it scalable with partition key is token, and post_id
+- Mỗi lần post một bài viết hay like một bài viết 100 từ (token) -> phải update index tương ứng của 100 từ đó (token)
+
+Posts : 
+
+- with billion of posts, tăng instance + dùng kafka để buffer + partition kafka để xử lý song song + redis sharding theo keyword. (tìm token trên redis vẫn nhanh vì dùng consistet hashing)
+
+Likes : 
+
+- with billion of likes, cũng dùng kafka + sharding như xử lý posts. Nhưng với like thì nó biến đổi liên tục, đặc biệt với các bài post viral thì like tăng liên tục. 
+
+- Cách 1 : thêm batcher service gom lại, 30s mới update để đẩy vào kafka một lần để update redis -> hiệu quả với viral post, nhưng ko hiệu quả với normal post + mất công thêm batcher 
+
+- Cách 2 : Lúc ghi thì ghi xấp xỉ, nhưng lúc đọc thì lấy cái mới nhất.
+	- Có Like batcher service để gom like lại, chỉ update Redis index khi số like có ngưỡng là 2, 4, 8, 16, ... (exponential) -> 1000 like chỉ cần update 10 lần thay vì 1000 lần vào redis 
+	- Order của bài viết dựa vào like index vẫn xấp xỉ đúng 
+	- Lúc query top N post, thì lấy 2 x N posts, và lấy giá trị like mới nhất từ Like batcher để vẫn hiển thị đúng 
+	- Cái này vận dụng tính chất một bài viết có thể được update nhiều bởi like, nhưng search thì ít hơn (write heavy >> read heavy). Kiến trúc kinh điển two-architecture 
 
 ## How can we optimize the storage requirements of the system?
 
-- with older post, we can move to cold storage to optimize the storage
+- Giới hạn index lại, chỉ 10k postId thôi, vì hiếm ai lướt đến mục 100 
+- Đánh dấu từ khóa ít dùng, ko được ai tìm kiếm trong năm và bỏ ra khỏi redis, đưa vào blob storage giá rẻ -> khi người dùng tìm kiếm từ khóa Lạnh (cold) ít dùng thì chấp nhận tốn latency nhưng đỡ tốn nhiều tiền 
+- **Khi Đọc (Read Path):** User ➔ CDN (Edge Cache) ➔ API Gateway ➔ Search Service ➔ Check Redis (Hot) ➔ Nếu thiếu thì check S3 (Cold) ➔ Trả về top $2N$ kết quả xấp xỉ ➔ Gọi Like Service để Sắp xếp lại real-time (Re-ranking) ➔ Trả về $N$ kết quả chuẩn xác cho User.
+- **Khi Ghi (Write Path):** Bài viết/Lượt thích ➔ Kafka (Buffer/Partition) ➔ Ingestion Service ➔ Ghi gom cụm (Batch) hoặc ghi theo cột mốc (Milestone) vào các Shard Redis phân tán theo Keyword. Định kỳ dọn dẹp các chỉ mục quá dài hoặc quá ít người dùng sang S3.
