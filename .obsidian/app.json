@@ -6,5 +6,6 @@
     "downscalePercent": 100
   },
   "spellcheck": false,
-  "attachmentFolderPath": "image"
+  "attachmentFolderPath": "image",
+  "alwaysUpdateLinks": true
 }
