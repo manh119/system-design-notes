@@ -149,3 +149,8 @@ Likes :
 - Đánh dấu từ khóa ít dùng, ko được ai tìm kiếm trong năm và bỏ ra khỏi redis, đưa vào blob storage giá rẻ -> khi người dùng tìm kiếm từ khóa Lạnh (cold) ít dùng thì chấp nhận tốn latency nhưng đỡ tốn nhiều tiền 
 - **Khi Đọc (Read Path):** User ➔ CDN (Edge Cache) ➔ API Gateway ➔ Search Service ➔ Check Redis (Hot) ➔ Nếu thiếu thì check S3 (Cold) ➔ Trả về top $2N$ kết quả xấp xỉ ➔ Gọi Like Service để Sắp xếp lại real-time (Re-ranking) ➔ Trả về $N$ kết quả chuẩn xác cho User.
 - **Khi Ghi (Write Path):** Bài viết/Lượt thích ➔ Kafka (Buffer/Partition) ➔ Ingestion Service ➔ Ghi gom cụm (Batch) hoặc ghi theo cột mốc (Milestone) vào các Shard Redis phân tán theo Keyword. Định kỳ dọn dẹp các chỉ mục quá dài hoặc quá ít người dùng sang S3.
+
+
+
+> [!Interview question]
+> Ước tính storage cần dùng của redis nếu có 1M token và 10k bài postId ?
