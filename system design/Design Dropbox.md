@@ -75,19 +75,22 @@ The flow would be :
 
 Bài toán ở đây là : File có ở cả local device và cloud, chứ không phải là File chỉ có ở cloud :v 
 
-#todo 
 Flow would be : 
-1. Dropbox desktop check local edits change, if have an edits it call an api to publish change of list file to File service
-2. File service save this change to FileInfo table like status, updated_at, name, ....
+1. Dropbox desktop use tool monitor file change, directory change of operating system to check local edits change, if have an edits it call an api to publish changeEvents 
+2. File service use this changeEvents to modify accordingly FileInfo table like status, updated_at, name, ....
 
 ## Design how the sync agent on a device discovers changes that happened in the cloud and applies them to the local file system.
 
-#todo 
 FLow would be : 
-1. Each time we open dropbox web or app, we set up a websocket connection 
-2. When remote files change, we update the change through the websocket connection 
-3. Dropbox web or app will update correctly
+1. Each time we open dropbox desktop, we set up a websocket connection 
+2. When remote files change, remote server push a changeEvents through the websocket connection 
+3. Dropbox desktop will update local file correctly
 
+Combine with polling each 2 minute in case of dead websocket connection GET /files/changes?since={timestamp} to get latest change, remote server check if anyfile of that user have updated_at newer than timestamp. 
+
+Nhưng nếu dùng websocket thì làm sao remote server biết có file nào của user nào change nhỉ ? và changeEvents nên được thiết kế như thế nào ? 
+- Dùng redis pub/sub, và khi có ai đó gọi API POST để thực hiện một changeEvents ở FileInfo table, khi update ở FileInFor table xong thì cũng publish một event vào redis pub/sub để gửi changeEvents qua websocket connection
+- #todo 
 
 # Deep dive
 
@@ -106,3 +109,11 @@ FLow would be :
 - Nếu mà fail do user tắt trình duyệt, do tắt app, tắt máy tính thì chịu chết :)), youtube cũng méo xử lý đc :)) 
 
 ## How can we reduce bandwidth usage and make the sync process faster than downloading full files each time they change?
+
+
+
+## How can you ensure file security?
+
+1. Dùng HTTPS để encrypt data trên đường truyền, tránh man in the middle 
+2. Mã hóa file khi lưu ở S3, 
+3. Access control : khi một user download một file, thì luôn check xem user đó nằm trong ShareList table ko của file đó ko.  #todo 
