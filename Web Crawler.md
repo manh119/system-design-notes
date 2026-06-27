@@ -3,6 +3,11 @@
 1. Crawl the web starting from a given set of seed URLs.
 2. Extract text data from each web page and store the text for later processing.
 
+Out of scope : 
+1. handle login page
+2. non-text data like image, video, ...
+3. dynamic content (javascipt render page)
+
 # NonFunctional requirements
 
 1. Scalable to crawl 1B webpage a day
@@ -24,7 +29,7 @@
 # Data flow 
 
 1. with list of seed URLs, we add it to URL table
-2. we are going to make a HTTP request to URLs with status = PENDING in URL table
+2. we are going to make a HTTP request to URLs with status = NEW in URL table
 3. With each HTML page, we extract content text and URLs in that page
 4. We deduplicate page content and URL
 5. We add new URLs in that page to URL table for latter processing and mark processed URL as PROCESSED, and save extracted text and webpage meta data
@@ -59,6 +64,8 @@ Steps are :
 - we can use Redis as distributed lock (set NX command) for saving urls that are processing. We can save id of that URL as key with TTL = 5 minute 
 - the next time Fetch service get URL for crawling, it first check if that url have in Redis, we ignore it for this crawling. 
 - when Fetch service get URL for crawling, it include url have status NEW or RETRYABLE and now > next_attempt. If after max_retry, we will mark that URL as fail. 
+
+#todo : so sánh thiết kế này với cách fetch service get được dữ liệu thì lưu vào s3 luôn và extract service muốn đọc dữ liệu thì get từ s3 của bài viết 
 
 ## How can you ensure politeness and adhere to robots.txt?
 
