@@ -1,4 +1,21 @@
-# buổi 1, 2, 3 : kafka producer, consumer, + truyền message chạy được 
+# Buổi 1:
+
+FLow chính : 
+1. tạo socket
+2. listen + accept 
+
+Client : 
+1. tạo socket
+2. connect 
+
+- Socket đơn giản là abstraction cho giao tiếp mạng, giống như file là abstraction để giao tiếp file 
+
+
+
+
+
+
+, 2, 3 : kafka producer, consumer, + truyền message chạy được 
 
 - ByteBuffer req = ByteBuffer.wrap(payload); -> bọc (chỉ là view, ko copy dữ liệu) để dùng các hàm của byteBuffer dễ dùng hơn (code sạch hơn) 
 - payload là [] byte 

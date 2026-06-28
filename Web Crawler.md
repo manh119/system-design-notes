@@ -57,6 +57,10 @@ Steps are :
 - When get http code status = 5xx, we save that url with status = RETRYABLE, next_attempt = now + exponential backoff, and value of exponenetial backoff, num_retry. 
 - the next time Fetch service get URL for crawling, it include url have status NEW and RETRYABLE
 
+## How can we ensure we are fault tolerant and don't lose progress?
+
+- 
+
 ## How would you implement exponential backoff and max retry count in Cassandra so that multiple fetch workers do not repeatedly pick the same failing URL at the same time?
 
 ![[Pasted image 20260626062841.png]]
@@ -65,14 +69,33 @@ Steps are :
 - the next time Fetch service get URL for crawling, it first check if that url have in Redis, we ignore it for this crawling. 
 - when Fetch service get URL for crawling, it include url have status NEW or RETRYABLE and now > next_attempt. If after max_retry, we will mark that URL as fail. 
 
-#todo : so sánh thiết kế này với cách fetch service get được dữ liệu thì lưu vào s3 luôn và extract service muốn đọc dữ liệu thì get từ s3 của bài viết 
+## So sánh thiết kế này với cách fetch service get được dữ liệu HTML từ url thì lưu vào s3 luôn và đẩy id vào kafka, sau đó extract service muốn đọc dữ liệu thì get từ s3 của bài viết 
+
+- Nếu cách của mình thì khi nào fetch service tính là xong bước của nó? Nếu lấy html từ internet xong, gọi đợi extract service hoàn thành -> phải đợi + bị phụ thuộc vào tốc độ xử lý của extract service 
+- Nếu có kafka ở giữa, thì gửi vào kafka là xong, nhưng gửi cả page html thế cũng ko tốt cho kafka 
+- Tốt hơn là lấy được html page thì đẩy lên s3 luôn và gửi cái id vào kafka là xong việc thôi. Vì bước rủi ro nhất là phụ thuộc vào web bên ngoài internet (rate limiting, slow connection ...), các xử lý trong nội bộ thì dễ handle hơn 
+- chia ra multi-stage pipeline -> các service scale độc lập, xử lý xong là commit luôn (lưu s3, lưu db) luôn, service này chết ko ảnh hưởng service khác xử lý + có thể tối ưu độc lập (isolate failures)
+
+## So sánh việc query lấy url có status = NEW từ cassandra (của mình) vs cách Fetch service cứ lấy từ queue ra và xử lý của bài viết ? 
+
 
 ## How can you ensure politeness and adhere to robots.txt?
 
 ![[Pasted image 20260626064515.png]]
 
 - When Fetching HTML from a url, we save robots.txt in domain table for that domain
-- When get a URL for fetching, we first check the policy of that domain like rate-limiting, allow to crawl, ... 
+- When get a URL for fetching from queue, we first check the policy of that domain
+	- check Disallow, if not we ignore that URL
+	- check Crawl-delay (of that domain, not of that URL), và trường last_crawl_time của domain đó, nếu đã đến hạn có thể crawl thì check distributed lock xem đã có URL nào tranh quyền crawl domain này chưa. 
+	- Nếu có crawl đang cào thì dùng ChangeMessageVisibility của SQS để ẩn đi một time.
+	- Nếu chưa có thì SET NX TTL và cào, cào xong thì update last_crawl_time
+	
+- Nếu ko có Crawl-delay thì tuân thủ tiêu chuẩn chung là 1 request / domain. -> lưu distributed lock redis là đc.
+	- Vấn đề : nhiều request URL cùng đến hạn cào, cùng retry và check redis đồng thời -> thunder herd -> thêm vài time ngẫu nhiên ở thời gian retry của URL là được. 
+
+Ví dụ robot.txt của fb : 
+
+![[Pasted image 20260628082957.png]]
 
 ## How can you avoid crawling duplicate content across different URLs?
 
@@ -84,12 +107,48 @@ Steps are :
 
 ## How would you implement parallelization to ensure the system could efficiently crawl 10 billion pages in under 5 days? Think deeply about any bottlenecks.
 
-- each step is done, and we can process another url
-- with fetch service, we can mark max depth of a website to avoid trap
-- between extract service and deduplicate service we can have a kafka to scale producer and consumer (deduplicate service) independantly. 
+Between extract service and deduplicate service we can have a kafka to scale producer and consumer (deduplicate service) independantly. 
+
+Crawler : call url để lấy HTML, lưu vào s3, chủ yếu là I/O boud nên bottleneck sẽ là băng thông mạng 
+- 10B webpage 5 ngày -> 10B / (5 x 10 ^ 5) = 20k webpage 1 giây. 
+- Mỗi webpage 2MB dung lượng -> tốc độ mạng cần 40 GByte / giây
+- Máy cấu hình cao của AMS khoảng 200 Gbps (bit per second) = 25GBps
+- Vì trễ mạng, DNS, rate-limiting, giả sử dùng được 30% -> cần ít nhất 5 máy 
+- Dùng BFS để ưu tiên nhiều domain cùng lúc -> tránh rate limit mỗi domain 
+
+Parse worker : đọc HMML từ s3, tách URL + content 
+- scale song song theo queue depth 
+- chỉ là tính toán ở nội bộ, không phụ thuộc internet + rate limit như crawler 
+
+DNS resolution : 
+- Phân giải hàng triệu request / s sẽ bị toang, dính rate-limit hoặc thêm tiền 
+- DNS cache theo domain 
+- dùng nhiều DNS provider và roundrobin 
+
+Xử lý trùng lặp :
+- deduplicate URL : hash index trong db hoặc bloom filter 
+- deduplicate content : hash index trong db hoặc bloom filter. Nhưng mà dùng thuật toán gì để tối ưu hash nhỉ? 
+- Nếu 2MB mỗi webpage thì khi hash ra bao nhiêu byte ? -> output luôn cố định, ví dụ 128bit 
+- Tiêu chí là tốc độ nhanh + hash collision thấp (ko cần thuật toán hash bảo mật) : murmurhash3 trong hadoop, cassandra 
+- Để check nội dung gần giống nhau có thể dùng simhash của google (hash xong số sánh số bit khác nhau #todo test)
+
+Crawler trap : 
+- ví dụ trap vào một website mãi mãi 
+- nên tính maxDepth từ seedURL hay từng URL ? -> nên theo seed URL, vì nếu theo từng URL thì maxDepth sẽ được reset 
+- Nên giới hạn số lần cào một domain nữa, ví dụ 10k / domain 
+
+
+
+
+
+
+
+
+
+
 
 ## How would you modify the system to ensure the extracted text data remains up-to-date? Consider that we now require the data to be fresh and regularly updated.
 
 ![[Pasted image 20260626074750.png]]
 
-- we may have a cronjob run each 10 days, to re-fetch url that are done.
+- we may have a url scheduler to rerun the fetcher 
