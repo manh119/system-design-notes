@@ -80,17 +80,39 @@ Chiến thuật :
 	- Can be resource-intensive with many clients
 
 
-
-
-
-
-
-
-
-
-
-
-
 ### SSE - Server side event, the efficient one way street
 
-- Thử triển khai sse đơn giản xem nào ? nó là mô hình pub/sub ở redis nếu dữ liệu là từ kafka nhỉ? Nếu dữ liệu từ kafka thì còn cách khác ko? 
+- Dùng khi cần server có nhiều update cần gửi cho client, nếu server chỉ cần 1, 2 update thì dùng long polling là đủ + Client ko cần gửi gì cho server 
+- Tận dụng được HTTP infrastructure 
+	- Content type : text/event-stream 
+	- Connection : keep alive 
+- Ví dụ : bảng giá chứng khoản, tỉ số bóng đá.
+- Thách thức : 
+	- Một số proxy, loadblancer ko support stream response, một số proxy buffer response đến khi done
+	- Một số proxy, firewall, VPN khó tính của khách hàng doanh nghiệp ko thấy content-length trong header sse -> chặn lại buffer đủ mới gửi tiếp.
+	- Timeout của api gateway 30-60s -> cần thiết lập lại connection và xử lý gap dữ liệu trong thời gian thiết lập lại 
+	- SSE có "last event ID" để xử lý vấn đề này, nếu client chủ động đóng connection, thì khi re-connect thì gửi lại last_event_id, và server dùng nó để bù gap.
+
+- Ở bước nhận dữ liệu từ event đến server, nó là mô hình pub/sub ở redis nếu dữ liệu là từ kafka nhỉ? Nếu dữ liệu từ kafka thì còn cách khác ko? 
+	- Vấn đề : kafka có thể bắn về bất kỳ pod nào, SSE cũng có thể đang kết nối ở bất kỳ pod nào, cần giao tiếp dữ liệu giữa 2 ông này (share-memory như db, redis hoặc message queue như rabbitmq pub/sub, redis pub/sub)
+	- hoặc dùng các giải pháp open source như  [[CENTRIFUGO]] để xử lý chatapp, livescore, google docs, websocket. SocketCluster, AWS API Gateway
+- [[Demo SSE]]
+
+### Websockets: The Full-Duplex Champion
+
+Cách hoạt động : 
+- Khởi tạo kết nối qua HTTP + yêu cầu Upgrade websocket thành ws -> vẫn dùng cookies, header của http để authen
+- Sau khi đã kết nối, xử lý dữ liệu thô 
+
+Thách thức : 
+- Statefull, nên khi deploy service mới -> hàng triệu connection đang có sẽ phải off và client sẽ phải tự re-connection websocket connection 
+- 
+- Load balancer : 
+	- Load balancer layer 7 thường khoo
+	- Load balancer layer 4 natively support 
+
+Khuyến nghị : 
+- Chỉ thực sự dùng websocket khi giao tiếp 2 chiều là nhiều, nếu giao tiếp server nhiều mà client ít có thể chỉ cần SSE + HTTP PUT từ Client. 
+- Architecture : do websocket statefull nên tách websocket service riêng để quản lý hạ tầng + hàng triệu connection. Các service bussiness khác vẫn là stateless để scale dễ dàng theo nhu cầu. (các giải pháp open source nhwu [[CENTRIFUGO]], hay mất phí như AWS API Gateway)
+
+[[Demo Websocket]]
