@@ -1,5 +1,13 @@
 # Funtional requirement 
 
+> first, clarify + align before jumping 
+> similar to fb
+> alows : create, like, search, sorted
+> out of scope : fuzzy search, personalized ranking, image search, real-time update 
+> not use elastic search 
+> not recommend, but scale
+> next step 
+
 First, I'd like to clarify the requirements and align on the scope before jumping into the design.
 
 > We need to align on the priorities. (thống nhất về điều gì)
@@ -22,8 +30,6 @@ I'd also like to clarify what's intentionally out of scope. I'll assume we don't
 - image or video search,
 - or real-time updates while users are viewing the search page.
 
-Excluding personalization is especially helpful because every user receives the same results for the same query, which reduces overall system complexity.
-
 Another important assumption is that we're not allowed to use Elasticsearch or any existing full-text search engine. 
 
 So the main challenge here isn't building a recommendation system, but designing a scalable infrastructure that can efficiently index billions of posts.
@@ -33,15 +39,15 @@ If these assumptions sound reasonable, I'll move on to the next step
 ---
 # Non functional requirement 
 
-> Low latency search (< 500ms)
-> high volume of traffic
-> freshness less then one minute 
-> all posts are discoverable
-> highly available
+> prioritize Low latency search (< 500ms) for most 
+> high volume of traffic, horizontal 
+> freshness, less then one minute, not strictly 
+> all posts are discoverable, relax expect 
+> highly available, downtime 
 
-The system needs to prioritize **low latency search**, meaning that for most queries, we should aim for a **response time under 500 milliseconds**.
+The system must be fast, we should aim for a **response time under 500 milliseconds**.
 
-At the same time, the system should handle a **high volume of traffic**, so we’ll need to think about horizontal scalability rather than optimizing for a single node.
+The system should handle a **high volume of traffic**, so we’ll need to think about horizontal scalability rather than optimizing for a single node.
 
 Another important requirement is **freshness** — new posts should become searchable quickly, ideally within **less than one minute**. So we’re not building a strictly real-time system, but we still need near-real-time indexing.
 
@@ -56,57 +62,30 @@ Finally, the system should be **highly available**, since search is a core featu
 
 # Scale Estimation
 
-> wirtes : 1 post per day -> 1 billion post per day -> 10k post per second
-> likes : 10 likes per day -> 10 bilion likes per day -> 100k likes per second 
-> read : 1 search per day -> 10k search per second 
-> fairly balanced but write-intensive
+> 1B uses, create 1 post, like 10 post, search 1 
+> write=heavy vs read heavy 
 
-> **Now I’d like to estimate the scale so I can make better architectural decisions instead of relying on assumptions.**
+We'll assume Facebook has 1B users. On average each user produces 1 post per day (maybe 20% do 5 posts and 80% do 0 posts) and Likes 10 posts. For ease of calculation, we'll assume 100k seconds in a day
 
-Let’s assume we have around **1 billion users**.
+- First let's look at the volume of writes:
 
-For writes:
+Posts created: 1B * 1 post/day / (100k seconds/day) = 10k posts/second
+Likes created: 1B * 10 likes/day / (100k seconds/day) = 100k likes/second
 
-- Each user creates about **1 post per day**, so that’s roughly **1 billion posts per day**.
-- Spread over a day, that becomes around **10,000 posts per second**.
+- Now let's look at reads.
 
-For likes:
+Searches: 1B * 1 search/day / (100k seconds/day) = 10k searches/second
 
-- Each user performs around **10 likes per day**, so that’s about **10 billion likes per day**.
-- That translates to roughly **100,000 likes per second**.
+While this is a lot (and may burst the 10x this value or more), our system is write-heavy vs read-heavy
 
-For reads:
+- Storage : 
 
-- If each user performs about **1 search per day**, that gives us around **10,000 searches per second**.
+Finally let's evaluate the storage requirements of the system. First let's assume Facebook is 10 years old and that the full post metadata is 1kb (probably an overestimate).
 
-So overall, we have a system that is fairly balanced, but still **write-intensive**, especially when considering both posts and likes.
+Posts searchable: 1B posts/day * 365 days/year * 10 years = 3.6T posts
+Raw size: 3.6T posts * 1kb/post = 3.6 PB
 
----
-
-# Storage Estimation
-
-> 10 years, each post is 1KB -> 3.6 trillion posts total, 3.6 petabytes of data 
-> distibuted storage + hot + cold archival data 
-
-> **Next, I’ll estimate storage to understand whether we can keep everything in memory or need tiered storage.**
-
-Let’s assume the system has been running for **10 years**, and each post, including metadata, is about **1 KB**.
-
-That gives us:
-
-- 1 billion posts per day
-- × 365 days × 10 years
-- ≈ 3.6 trillion posts total
-
-In terms of storage:
-
-- 3.6 trillion posts × 1 KB
-- ≈ **3.6 petabytes of data**
-
-So clearly, we cannot keep everything in memory or even on a single storage system. We’ll need:
-
-- distributed storage
-- and likely a separation between **hot data** and **cold archival data**
+Wow, that's a lot of storage! We're going to need to find some way to constrain this in our search system.
 
 ---
 
@@ -116,19 +95,13 @@ So clearly, we cannot keep everything in memory or even on a single storage syst
 > post 
 > like, mainly care aggregate like count 
 
-> **Let me first define the core entities in this system. Fortunately, this problem has a relatively simple domain model.**
+> We'll start by identifying the core entities we'll be working with. Fortunately, for this problem, the core entities are very simple:
 
-We essentially have three main entities:
-
-First, we have the **User**, which represents the actor in the system. A user can create posts and interact with content.
-
-Second is the **Post**, which is the main object we are indexing and searching. A post will contain the text content, it is created by a user, and it also has metadata like creation time and a like count.
-
-Third is the **Like** entity. Users can like posts, and for this problem, we mainly care about the **aggregate like count per post**, rather than modeling each like individually in the search system.
+1. **User**: This entity creates and likes posts.
+2. **Post**: This is the thing that we're searching! It has a content, is created by a user, and implicitly has a like count.
+3. **Like**: Likes are created when a user likes a post, but for this problem we mostly care about the _count_ of likes.
 
 > I'd rather stay at home than go with you (tôi thà làm gì đó hơn làm gì đó)
-
-Since the data model is quite simple, I’ll move on quickly to the system interface.
 
 ---
 
@@ -161,7 +134,7 @@ Our first requirement is on the write path, allowing users to create and like po
 
 ![[Pasted image 20260705171824.png]]
 
-These events are consumed by an **Ingestion Service**, which is responsible for updating our search index.
+These events (create Posts and create Likes) are consumed by an **Ingestion Service**, which is responsible for updating our search index.
 
  > This solution is obviously over-simplified and I'll come back to solve its problems
 
@@ -170,7 +143,7 @@ These events are consumed by an **Ingestion Service**, which is responsible for 
 ## 2) Users should be able to search posts by keyword.
 
 >go through an API gate way 
->forwared to search service 
+>is forwared to search service 
 >find all post that contain, 
 
 > Next, we need to allow users to actually search.
@@ -187,8 +160,8 @@ How do we actually find posts by keyword efficiently at scale?
 
 ### Naive Approach 
 
-> like query
-> look at every post 
+> like query, technically return the correct 
+> slow, look at every post 
 
 The naive solution to this problem is to keep all of the posts in a relational database and use a query like
 
@@ -213,7 +186,7 @@ Unfortunately, it's terribly slow because our database needs to look at every po
 > flow : break them apart, append to list 
 > challenges : redis, hot key, fanout on write 
 
-The idea behind an inverted index is that we can create a dictionary which maps keywords to the documents that contain them. In this case, we'll create a map from keywords to posts!
+The idea behind an inverted index is that we can create a dictionary which maps keywords to the documents that contain them. 
 
 Instead of:
 
@@ -246,17 +219,13 @@ Next we'll move to our last requirement which is to be able to sort the results 
 
 ### Naive Approach: Request-Time Sorting
 
-The most naive solution we can employ is to grab all of the post IDs for a given keyword, look up the timestamp or like count, then sort those in memory.
-
-Flow : Assuming we're sorting by recency, let's walk through an example. We're going to first make a request to our index for a given keyword. It will return to us a list of Post IDs. For each of these post IDs we'll query the Post Service for the created timestamp. Once we retrieve these timestamps, we can sort the posts in the Search Service and return to the user.
+The most naive solution we can employ is to grab all of the post IDs for a given keyword, look up the timestamp or like count for each post id in the database, then sort those posts in memory.
 
 This is ... not great.
 
 ##### Challenges
 
-The biggest problem with this approach is that the number of Post IDs might be very large for common keywords. If a keyword like "Taylor" has 10s of millions of results, we could easily have payloads returned from our index which are 100s of megabytes. 
-
-In addition, for each of these results we need to make a lookup - 10s of millions of them. Finally, sorting millions of items at request time adds unnecessary latency to our system.
+The biggest problem with this approach is that the number of Post IDs might be very large for common keywords, may be 10s milions post ids. For each of these post id we need to make a lookup - 10s of millions of them. Finally, sorting millions of items at request time adds unnecessary latency to our system.
 
 ---
 
@@ -268,9 +237,9 @@ In addition, for each of these results we need to make a lookup - 10s of million
 >post is created, add to both, like happend 
 >challenges : double storages, like frequency 
 
-A different approach would be to have two separate indexes: one sorted by the creation time and one sorted by the like count (I'll refer to these as the creation index and likes index going forward). Using our Redis-based approach from earlier, we can have separate keys depending on whether we're sorting by Likes or Creation date.
+A different approach would be to have two separate indexes: one sorted by the creation time and one sorted by the like count. 
 
-For the creation index keys, we can use a standard Redis list. We're always going to appending to this list and our queries will only be taking from the last elements.
+For the creation index keys, we can use a standard Redis list. We're always going to append to this list and our queries will only take from the last elements.
 
 For the likes index, each key can use a [Redis sorted set](https://www.hellointerview.com/learn/system-design/deep-dives/redis#redis-for-leaderboards). The sorted set allows us to keep a list of items ordered by a score in the same way that a priority queue or sorted list might work, with the same time complexity of insertions and queries.
 
@@ -283,3 +252,7 @@ When a new post is created, we'll add it to both indexes for every keyword it co
 We've doubled the amount of storage required for our indexes here. This is a valid tradeoff for the massive improvement in query performance, but it does cost more.
 
 We also introduced a new problem: likes are happening quite frequently. Each like event requires us to update many scores so that the like indexes are up-to-date. This puts a lot of stress on our system, which we'll plan to address later.
+
+> so that = để làm gì (I saved money **so that** I could buy a new laptop.)
+
+# Deep dive 
