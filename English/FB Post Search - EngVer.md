@@ -39,24 +39,24 @@ If these assumptions sound reasonable, I'll move on to the next step
 ---
 # Non functional requirement 
 
-> prioritize Low latency search (< 500ms) for most 
-> high volume of traffic, horizontal 
-> freshness, less then one minute, not strictly 
-> all posts are discoverable, relax expect 
+> fast, return in < 500ms.
+> high volume of requests 
+> searchable in a short amount of time, < 1 minute, not strictly 
+> All posts must be discoverable, relax expect 
 > highly available, downtime 
 
-The system must be fast, we should aim for a **response time under 500 milliseconds**.
+1. The system must be fast, median queries should return in < 500ms.
 
-The system should handle a **high volume of traffic**, so we’ll need to think about horizontal scalability rather than optimizing for a single node.
+2. The system must support a high volume of requests (we'll estimate this later).
 
-Another important requirement is **freshness** — new posts should become searchable quickly, ideally within **less than one minute**. So we’re not building a strictly real-time system, but we still need near-real-time indexing.
+3. New posts must be searchable in a short amount of time, < 1 minute. we’re not building a strictly real-time system, but we still need near-real-time indexing.
 
-We also need to ensure that **all posts are discoverable**, including old or low-engagement posts. However, I think it’s reasonable to relax latency expectations for these cold or long-tail posts.
+4. All posts must be discoverable, including old or low-engagement posts. However, I think it’s reasonable to relax latency expectations for these cold or long-tail posts.
+
+5. The system should be highly available. since search is a core feature and downtime would significantly impact user experience.
 
 > relax the deadline
 > relax the rules
-
-Finally, the system should be **highly available**, since search is a core feature and downtime would significantly impact user experience.
 
 ---
 
@@ -130,7 +130,6 @@ Our APIs are straightforward. We have two paths: a query path for searching and 
 > are consumed by 
 > over-simplified
 
-Our first requirement is on the write path, allowing users to create and like posts. We need to be able to accept these calls and write them to our database.
 
 ![[Pasted image 20260705171824.png]]
 
@@ -142,11 +141,9 @@ These events (create Posts and create Likes) are consumed by an **Ingestion Serv
 
 ## 2) Users should be able to search posts by keyword.
 
->go through an API gate way 
->is forwared to search service 
->find all post that contain, 
-
-> Next, we need to allow users to actually search.
+>go through an API gate way handle 
+>is forwared to 
+>find all post that contain
 
 When a user searches for posts, the request first goes through an **API Gateway**, which handles authentication, rate limiting, and routing.
 
@@ -154,14 +151,12 @@ Then the request is forwarded to a **Search Service**, which is horizontally sca
 
 In order to allow users to search posts by keyword, we need to be able to find all of the posts which _contain_ that keyword. With trillions of posts and petabytes of data, this is not a small feat!
 
-How do we actually find posts by keyword efficiently at scale?
-
 ---
 
 ### Naive Approach 
 
-> like query, technically return the correct 
-> slow, look at every post 
+> naive solution, technically return, terribly slow
+> is not viable
 
 The naive solution to this problem is to keep all of the posts in a relational database and use a query like
 
