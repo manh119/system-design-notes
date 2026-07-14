@@ -14,6 +14,30 @@
 
 
 
+## 120s without spring batch + with cursor id 
+
+![[Pasted image 20260713193953.png]]
+
+
+
+## 100s without spring batch + without cursor 
+
+![[Pasted image 20260713195138.png]]
+
+
+## 200s without spring batch + without cursor 
+![[Pasted image 20260713195904.png]]
+
+
+## 628s with cursor 50tr record 
+
+![[Pasted image 20260713204129.png]]
+
+
+## 617s with not cursor 50tr record
+
+![[Pasted image 20260713205536.png]]
+
 
 ```sql 
 `CREATE TABLE user_banners (

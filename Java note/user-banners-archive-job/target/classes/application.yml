@@ -1,0 +1,31 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/postgres
+    username: postgres
+    password: postgres
+    hikari:
+      # Job chạy nền + ứng dụng chính có thể dùng chung pool khác nhau,
+      # nên để pool nhỏ gọn, tránh chiếm hết connection của app chính
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  batch:
+    job:
+      # Không tự chạy job khi app khởi động (ta launch qua Scheduler)
+      enabled: false
+    jdbc:
+      # Lần đầu chạy: always để Spring Batch tự tạo bảng metadata (BATCH_*)
+      # Sau khi đã có bảng, đổi thành "never" và quản lý qua migration (Flyway/Liquibase)
+      initialize-schema: always
+
+archive:
+  job:
+    batch-size: 20000          # so dong xu ly moi vong lap (tune theo tai server)
+    cron: "0 44 20 * * *"        # 2h sang moi ngay
+    sleep-between-batches-ms: 50   # nghi ngan giua cac batch de giam ap luc len DB
+
+logging:
+  level:
+    com.example.archive: INFO
+    org.springframework.batch: INFO

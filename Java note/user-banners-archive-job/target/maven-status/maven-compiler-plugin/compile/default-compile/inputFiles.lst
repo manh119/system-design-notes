@@ -1,0 +1,5 @@
+/home/manh/Downloads/user-banners-archive-job/src/main/java/com/example/archive/BannerArchiveApplication.java
+/home/manh/Downloads/user-banners-archive-job/src/main/java/com/example/archive/config/BannerArchiveJobConfig.java
+/home/manh/Downloads/user-banners-archive-job/src/main/java/com/example/archive/scheduler/BannerArchiveScheduler.java
+/home/manh/Downloads/user-banners-archive-job/src/main/java/com/example/archive/tasklet/ArchiveBatchTasklet.java
+/home/manh/Downloads/user-banners-archive-job/src/main/java/com/example/archive/tasklet/SnapshotMaxIdTasklet.java

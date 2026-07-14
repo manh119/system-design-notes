@@ -251,3 +251,29 @@ We also introduced a new problem: likes are happening quite frequently. Each lik
 > so that = để làm gì (I saved money **so that** I could buy a new laptop.)
 
 # Deep dive 
+
+> With the core functional requirements met, it's time to dig into the non-functional requirements and other optimizations via deep dives.
+
+### 1) How can we handle the large volume of requests from users?
+
+>fast, but lot of traffic 
+>some convenient job easier 
+>not have personalization, search for the same parameters
+>up to 1 minute before 
+>add cache, responsible for most recent 
+>check cache, if not perform search 
+>eviction policy, don't stick around 
+
+Our in-memory reverse-index based system is quite fast, but we're going to be handling a lot of traffic. We had some convenient requirements earlier that might make our job even easier. 
+
+1. We do not have personalization, so if you and I are searching for the same thing with the same parameters, we should get the same results!
+2. We have up to 1 minute before a post needs to appear in the search results.
+
+We can add a distributed cache which is responsible for storing the most recent results for a given search query. When a search is performed, the service would first check the cache to see if the results are available. If they are, the service would return the results from the cache. If they are not, the service would perform a full search and store the results in the cache for future requests.
+
+We'll want to put an eviction policy on our cache to ensure stale results don't stick around. Since new posts should appear within 1 minute, we can set up a TTL of < 1 minute on our cache. 
+
+> Can you stick around after the meeting? (bạn có thể nán lại, ở lại sau cuộc họp ?)
+
+### 2) How can we handle multi-keyword, phrase queries?
+
