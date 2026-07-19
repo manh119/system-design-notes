@@ -2,6 +2,8 @@
 - Các lệnh đọc chỉ cần đọc ở user_banners (nhẹ)
 - test xóa ko order by theo id và order by theo id, test vaccum 
 
+code : 
+https://github.com/manh119/system-design-notes/tree/banner_job
 
 ## test dùng limit ko order theo id : 10tr dòng, 2m37s 
 

@@ -1,5 +1,0 @@
-com/example/archive/BannerArchiveApplication.class
-com/example/archive/tasklet/SnapshotMaxIdTasklet.class
-com/example/archive/config/BannerArchiveJobConfig.class
-com/example/archive/tasklet/ArchiveBatchTasklet.class
-com/example/archive/scheduler/BannerArchiveScheduler.class
