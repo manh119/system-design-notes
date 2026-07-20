@@ -1,4 +1,4 @@
-
+https://github.com/manh119/VeTauTet
 
 Xem mỗi lần 1h - 5h video, tự code lại trong 2h (not AI)
 mỗi video chia thành : vấn đề -> giải pháp (tool) + ý tưởng -> coding 
@@ -76,9 +76,51 @@ lession 16 + lession 17 :
 - cách 2 : lưu version mỗi khi thay đổi ở redis, verison ở local cache, version ở client (app), khi gửi xuống thì check version với local cache. Nếu khác version tức client đã được lấy version mới từ redis -> update local cache. 
 	- Nếu user chỉ đọc trang detail một lần -> lúc thanh toán vẫn có thể bị sai (đã được người khác update) -> cần check strong consistency chỗ này. 
 - impl local cache 
+- done setup elk, grafana, promoteus for mysql, redis, node, disitributed lock
+
 
 ### redis 
 
-- 1. lua vs transaction trong redis 
+- 1. lua vs transaction trong redis #todo question 
+- sự khác nhau, khi nào dùng, ưu nhược điểm 
 - Multi command : chuyển connection của client thành connection có transaction 
 - EXE command 
+2. trong một transaction của redis, nếu luồng khác sửa key đó 
+	- -> sau cùng là nhận giá trị của key luồng khác, chứ ko phải luồng đang chạy transaction 
+	- -> dùng WATCH, trong 1 transaction, nếu 1 biến bị luồng khác sửa thì sẽ hủy transaction 
+3. EVAL 
+	- redis.call, redis.pcall một cái thì bắn lỗi và các lệnh tiếp ko chạy đc nữa, một cái thì ko log lỗi, ko thực hiện lệnh ko chạy đc, và chạy tiếp các lệnh khác 
+	- nhược điểm lua, ko rollback khi lỗi ? 
+	- lua sẽ được đưa vào hàng đợi theo thứ tự -> đảm bảo tập lệnh lua ko bị gián đoạn và đảm bảo tính nguyên tử 
+- 4. master slave vs sentinal 
+	- master ghi + đọc, slave chỉ đọc 
+	- TH master down -> ko có cơ chế tự up à ?? 
+- 5. thiết lập sential, khi master down thì up một slave lên thay, 
+
+
+## lession 18 
+
+- khẩu trừ hàng tồn kho khi lượng đồng thời cao 
+- vấn đề : 
+	- khi nào thì trừ hàng, khi đặt hàng thành công, khi thanh toán thành công, khi giao hàng thành công ? 
+	- đảm bảo 3k request per second, đảm bảo strong consistency giữa redis và mysql khi black friday 
+	- ko để bán vượt số vượt kho (overselling) lỗ trong giá rẻ, vé còn nhưng báo hết (mất doanh thu) undersellling, bottleneck 
+- kinh nghiệm : 
+	- biết trước ngày black friday 
+	- tách new service cho black friday 
+	- ![[Pasted image 20260720213458.png]]
+	- ![[Pasted image 20260720213608.png]]
+	- double check, tách bảng blackfriday 
+	- warm up redis, front end, CDN 
+	- so sánh LUA vs incre, decr, get, set khi trừ hàng tồn kho 
+
+## Lession 19 
+
+- trừ hàng tồn ở mysql 
+- dùng optimistic lock 
+- dùng compare and swap 
+	- UPDATE TicketDetail t SET t.updatedAt = CURRENT_TIMESTAMP, " +
+            "t.stockAvailable = :oldStockAvailable - :quantity " +
+            "WHERE t.id = :ticketId AND t.stockAvailable = :oldStockAvailable"
+
+- so sánh các cách lock trong java, retranlock, compare and swap, sync 

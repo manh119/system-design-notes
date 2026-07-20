@@ -3,7 +3,7 @@
 - test xóa ko order by theo id và order by theo id, test vaccum 
 
 code : 
-https://github.com/manh119/system-design-notes/tree/banner_job
+https://github.com/manh119/arhive-banner-job
 
 ## test dùng limit ko order theo id : 10tr dòng, 2m37s 
 

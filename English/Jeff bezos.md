@@ -57,3 +57,14 @@ things, why do I need to make a hundred
 decisions today? If I make like three  
 good decisions a day, that's enough. Warren Buffett says he's good if he  
 makes three good decisions a year
+
+
+
+https://www.youtube.com/watch?v=F7JMMy-yHSU
+
+- being right a lot, change their mind a lot when having new data, reanalysis, because the world is complexity 
+- Relentless on vision and flexible on details 
+
+https://www.youtube.com/watch?v=DcWqzZ3I2cY&t=5820s
+
+- things are not going to change in the next 10 years is the big things.
