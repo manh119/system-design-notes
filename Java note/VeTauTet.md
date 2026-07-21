@@ -123,4 +123,19 @@ lession 16 + lession 17 :
             "t.stockAvailable = :oldStockAvailable - :quantity " +
             "WHERE t.id = :ticketId AND t.stockAvailable = :oldStockAvailable"
 
-- so sánh các cách lock trong java, retranlock, compare and swap, sync 
+- so sánh các cách lock trong java, retranlock, compare and swap, sync, atomic integer
+
+- lession 20 : 
+	- test script level 0 query ra xong set vào, hàng tồn bị âm vì race condition 
+	- cách compare and swap thì được 1k3 request per second, cách level 1 thì bị vấn đề idempotent đúng ko nhỉ? được 1k request per second. 
+	- còn ví dụ 10k request perscond thì phải trừ hàng tồn trong redis dùng lua script cho atomic. Chứ dùng mysql là toang db :v 
+- lession 21: 
+	- check trong redis, trừ hàng tồn trong redis, thành công thì update trong db 
+	- lỗi race condition : lấy từ redis, rồi một lệnh update redis -> race -> bị sai 
+	- dùng lua scrip để gom get và set lại thành một lệnh -> đảm bảo atomic + consistency giữa redis và mysql. Tested với jmeter với 128k requet 
+- lession 22 : 
+	- 1 ngày = 5k ticket x 100 chỗ = 500k ticket -> 1 năm = 180 triệu ticket 
+	- partiion thì sao , sharding thì khi count, khi avg thì phải biết table nào, rất loằng ngoằng :v
+	- mỗi tháng tạo một bảng riêng biệt 
+- lession 23: 
+	- mã oderid của shoppe có nghi ngày tháng trên đó, ví dụ 260414abcxyz, để biết nó thuộc table nào 
