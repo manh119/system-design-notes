@@ -138,4 +138,33 @@ lession 16 + lession 17 :
 	- partiion thì sao , sharding thì khi count, khi avg thì phải biết table nào, rất loằng ngoằng :v
 	- mỗi tháng tạo một bảng riêng biệt 
 - lession 23: 
-	- mã oderid của shoppe có nghi ngày tháng trên đó, ví dụ 260414abcxyz, để biết nó thuộc table nào 
+	- mã oderid của shoppe có nghi ngày tháng trên đó, ví dụ 260414abcxyz, để biết nó thuộc table nào -> query nhanh đc 
+
+
+- lession 24:
+	- distributed transaction 
+	- transsaction mysql, isolation level , kafka
+	- cơ chế bù trừ của từng task vụ, khôi phucj ngược 
+	- ![[Pasted image 20260722222642.png]]
+- lession 25: 
+	- xử lý gửi message để bù trừ qua kafka nếu xảy ra exception 
+	- nếu bị lỗi thì retry 3 lần, xử lý retry thì xử lý idempotent
+	- nếu retry 3 lần ko được thì đẩy hoặc báo admin, cần con người can thiệp chứ ko đc để thế
+- lession 26:
+	- dùng order id có ngày tháng khi sinh ra để biết nó bảng nào (OKX-VN-202604123), query nhanh theo order id nhanh 
+	- dùng union all thay vì OR để tận dụng index khi query từ 15/3 đến 15/4 
+	- select * from where order = /// OR order = /// 
+	- tự động sinh bảng khi đến tháng 5, thay vì sinh thủ công bằng tay 
+	- nhược điểm khi chia bảng : 
+	- redis sentinal có khác redisssion 
+
+### lession 27 : 
+
+- cách config thread 
+- while (true) -> dùng full core 
+- load avg cpu (làm backend ko thể ko biết từ khóa này), khi số này cao thì chậm đi, tại sao ? 
+- ![[Pasted image 20260722233931.png]]
+
+lession 28:
+
+- 
