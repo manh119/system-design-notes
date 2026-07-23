@@ -158,7 +158,7 @@ lession 16 + lession 17 :
 	- nhược điểm khi chia bảng : 
 	- redis sentinal có khác redisssion 
 
-### lession 27 : 
+## lession 27 : 
 
 - cách config thread 
 - while (true) -> dùng full core 
@@ -167,4 +167,42 @@ lession 16 + lession 17 :
 
 lession 28:
 
-- 
+- thành thạo vũ khí (thao trường đổ mổ hôi, chiến trường bớt đổ máu)
+- cách build project 
+
+lession 29:
+- tự động tạo table tháng mới 
+	- cách1 : chạy khi insert (just in time), dùng dùng production của anh tipjs, create if not exist và đặt trong cache 
+	- cách 2 :  cronjob chạy vào ngày 28, nếu hôm đó server off thì cook :v 
+	- cách dùng set scheduler event của db, thì tăng cpu lúc event xảy ra ? tăng nhiều ko?? 
+	- cách 3 : warm up khi ứng dụng khởi động -> nếu ứng dụng chạy 1 năm ko bật lại thì cook 
+- concurrent hashmap tại sao an toàn cho đa luồng, được dùng ở đâu ? ví dụ 
+- từ khóa synchrnized 
+
+lession 30: 
+- hủy đơn hàng, liên quan trực tiếp hoàn tiền, và hoàn tồn kho 
+- ![[Pasted image 20260723212730.png]]
+- dùng atomic consistency bằng transaction để rollback, bằng distributed lock để đảm bảo atomic
+- thứ tự : luôn để db commit trước rồi mới update redis 
+- idempotent : nhấn hủy nhiều lần vẫn phải như thế (đừng có remainGrocery = remainGrocery - 1), vì ý định là chỉ 1 lần. Retry kafka, retry network, ...
+- Nếu redis chết, db chết, ... để người dùng retry, ko để dữ liệu sai. 
+- Asyn task : bắn email, bắn notification. 
+- Nếu lưu db thành công nhưng redis thất bại 
+	- cách 1 : bắn mq để xử lý tiếp 
+	- cách 2 : dual write 
+	- cách 3: try confirm cancel (cũ )
+
+
+đặt hàng bất đồng bộ và đặt hàng đồng bộ :
+	- dùng compare and swap -> lock db -> hết connection nhanh 
+	- các hệ thống lớn dùng đặt hàng bất đồng bộ:
+		- ![[Pasted image 20260723220359.png]]
+		- xử lý idempotent, transaction của kafka, mất dữ liệu, trùng. lặp dữ liệu 
+## lession 31
+
+- @schedule (fix rate và fix delay ) : một cái thì cứ chạy, còn một cái thì đợi xong mới chạy 
+- impl outbox pattern, ưu nhược điểm với cdc, giải quyết vấn đề gì ? 
+
+lession 32 : 
+- triển khai idempotent ở consumer, sinh idempotent khi producer 
+- dùng insert ignore 

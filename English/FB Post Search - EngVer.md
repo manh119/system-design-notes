@@ -45,7 +45,8 @@ If these assumptions sound reasonable, I'll move on to the next step
 > All posts must be discoverable, relax expect 
 > highly available, downtime 
 
-1. The system must be fast, median queries should return in < 500ms.
+
+1. The system must be fast, median queries should return in within 500ms.
 
 2. The system must support a high volume of requests (we'll estimate this later).
 
@@ -63,7 +64,7 @@ If these assumptions sound reasonable, I'll move on to the next step
 # Scale Estimation
 
 > 1B uses, create 1 post, like 10 post, search 1 
-> write=heavy vs read heavy 
+> write heavy vs read heavy 
 
 We'll assume Facebook has 1B users. On average each user produces 1 post per day (maybe 20% do 5 posts and 80% do 0 posts) and Likes 10 posts. For ease of calculation, we'll assume 100k seconds in a day
 
@@ -155,7 +156,7 @@ In order to allow users to search posts by keyword, we need to be able to find a
 
 ### Naive Approach 
 
-> naive solution, technically return, terribly slow
+> naive solution, technically return, terribly slow, see at the query time
 > is not viable
 
 The naive solution to this problem is to keep all of the posts in a relational database and use a query like
